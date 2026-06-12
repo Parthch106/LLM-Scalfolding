@@ -1,0 +1,79 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# ── Virtual Environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Environment Variables — NEVER COMMIT THESE ────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Secrets / Keys ────────────────────────────────────────────────────────────
+*.pem
+*.key
+*.p12
+secrets/
+
+# ── Generated / Local PDFs ────────────────────────────────────────────────────
+# Users should generate their own test PDFs using the generate_*.py scripts
+test_*.pdf
+*.pdf
+
+# ── One-off utility scripts (not part of core architecture) ───────────────────
+generate_complex_pdf.py
+generate_medical_pdf.py
+generate_test_pdf.py
+generate_embeddings.py
+check.py
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+notebooks/**/.ipynb_checkpoints/
+
+# ── Test & Coverage Artifacts ─────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+test_setup.py
+tests/__pycache__/
+
+# ── Eval Outputs ──────────────────────────────────────────────────────────────
+eval_results.csv
+benchmark_results.csv
+*.csv
+
+# ── IDE & Editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.code-workspace
+*.suo
+*.user
+
+# ── OS Artifacts ──────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Gradio temp files ─────────────────────────────────────────────────────────
+gradio_cached_examples/
+flagged/
