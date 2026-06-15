@@ -5,7 +5,7 @@ from .pdf_schemas import InvoiceData, MedicalRecordData
 
 MAX_RETRIES = 5
 
-def run_pdf_agent(pdf_text: str, user_prompt: str, document_type: str = "Invoice", provider: str = "github") -> dict:
+def run_pdf_agent(pdf_text: str, user_prompt: str, document_type: str = "Invoice", provider: str = "github", secret_word: str | None = None) -> dict:
     """
     Orchestration layer for PDF extraction.
     Wires together: LLM -> Validation Gate -> (Retry Loop).
@@ -40,9 +40,9 @@ def run_pdf_agent(pdf_text: str, user_prompt: str, document_type: str = "Invoice
         
         try:
             if document_type == "Patient Medical Record":
-                parsed_data = MedicalRecordData.model_validate_json(raw)
+                parsed_data = MedicalRecordData.model_validate_json(raw, context={"secret_word": secret_word})
             else:
-                parsed_data = InvoiceData.model_validate_json(raw)
+                parsed_data = InvoiceData.model_validate_json(raw, context={"secret_word": secret_word})
             valid = True
         except ValidationError as e:
             # Flatten pydantic errors for the LLM
@@ -79,7 +79,7 @@ def run_pdf_agent(pdf_text: str, user_prompt: str, document_type: str = "Invoice
         "data": None
     }
 
-def run_unscaffolded_pdf_agent(pdf_text: str, user_prompt: str, document_type: str = "Invoice", provider: str = "github") -> dict:
+def run_unscaffolded_pdf_agent(pdf_text: str, user_prompt: str, document_type: str = "Invoice", provider: str = "github", secret_word: str | None = None) -> dict:
     """
     Runs the exact same extraction but WITHOUT the retry loop or self-correction.
     It simulates a raw LLM application.
@@ -99,9 +99,9 @@ def run_unscaffolded_pdf_agent(pdf_text: str, user_prompt: str, document_type: s
     
     try:
         if document_type == "Patient Medical Record":
-            parsed_data = MedicalRecordData.model_validate_json(raw)
+            parsed_data = MedicalRecordData.model_validate_json(raw, context={"secret_word": secret_word})
         else:
-            parsed_data = InvoiceData.model_validate_json(raw)
+            parsed_data = InvoiceData.model_validate_json(raw, context={"secret_word": secret_word})
         valid = True
     except ValidationError as e:
         err_msgs = []

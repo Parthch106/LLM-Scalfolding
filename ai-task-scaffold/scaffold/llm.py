@@ -89,7 +89,10 @@ def parse_command(
             # Gradio 6 style history: turn is a list of dicts, but we just want text.
             # Handle both Gradio 4 format [user_str, bot_str] and Gradio 6 format [{"role":"user", "content":str}, ...]
             if isinstance(turn, dict):
-                history_text += f"{turn.get('role', 'unknown')}: {turn.get('content', '')}\n"
+                content = turn.get("content", "")
+                if isinstance(content, list) and len(content) > 0:
+                    content = content[0].get("text", "")
+                history_text += f"{turn.get('role', 'unknown')}: {content}\n"
             elif isinstance(turn, list) and len(turn) == 2:
                 user_msg, bot_msg = turn
                 if isinstance(user_msg, dict): user_msg = user_msg.get('content', '')

@@ -37,6 +37,8 @@ generate_medical_pdf.py
 generate_test_pdf.py
 generate_embeddings.py
 check.py
+test_client.py
+test_gradio.py
 
 # ── Jupyter ───────────────────────────────────────────────────────────────────
 .ipynb_checkpoints/

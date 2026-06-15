@@ -20,6 +20,11 @@ class InvoiceData(BaseModel):
 
     @model_validator(mode='after')
     def check_math(self, info: ValidationInfo):
+        if info.context:
+            secret = info.context.get("secret_word")
+            if secret and secret.upper() not in self.reasoning.upper():
+                raise ValueError(f"Backend Business Rule Violation: The reasoning string MUST contain the exact word '{secret}'.")
+
         # Business Rule 1: Line item totals must equal quant * unit_price
         for i, item in enumerate(self.line_items):
             expected = round(item.quantity * item.unit_price, 2)
@@ -50,6 +55,11 @@ class MedicalRecordData(BaseModel):
 
     @model_validator(mode='after')
     def check_bmi(self, info: ValidationInfo):
+        if info.context:
+            secret = info.context.get("secret_word")
+            if secret and secret.upper() not in self.reasoning.upper():
+                raise ValueError(f"Backend Business Rule Violation: The reasoning string MUST contain the exact word '{secret}'.")
+
         if self.height_cm <= 0:
             raise ValueError("Math Error: height_cm cannot be zero or negative.")
             

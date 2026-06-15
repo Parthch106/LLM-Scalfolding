@@ -146,8 +146,27 @@ def refresh_metrics() -> dict:
 
 # ── Chat handler ──────────────────────────────────────────────────────────────
 
-def chat_handler(message: str, history: list, secret_word: str) -> tuple[str, list, gr.Dataframe, str]:
-    result = run_agent(message, DEMO_USER_ID, provider=PROVIDER, history=history, secret_word=secret_word)
+def handle_user_submit(message: str, history: list) -> tuple[str, list]:
+    if not message:
+        return "", history
+    new_message = {"role": "user", "content": [{"type": "text", "text": message}]}
+    return "", history + [new_message]
+
+def chat_response_handler(history: list, secret_word: str) -> tuple[list, gr.Dataframe, gr.HTML]:
+    if not history:
+        return [], gr.update(), gr.update()
+        
+    content_list = history[-1]["content"]
+    if isinstance(content_list, list) and len(content_list) > 0:
+        user_message = content_list[0].get("text", "")
+    elif isinstance(content_list, str):
+        user_message = content_list
+    else:
+        user_message = ""
+        
+    existing_history = history[:-1] if len(history) > 1 else []
+
+    result = run_agent(user_message, DEMO_USER_ID, provider=PROVIDER, history=existing_history, secret_word=secret_word)
 
     if result["status"] == "success":
         badge = "**✅ Success**"
@@ -178,29 +197,26 @@ def chat_handler(message: str, history: list, secret_word: str) -> tuple[str, li
     if not result["success"]:
         action_type = "failed"
     else:
-        msg = result["message"]
-        if "Logged" in msg: action_type = "LOG_OBJECT"
-        elif "Anomalous" in msg: action_type = "FLAG_ANOMALY"
-        elif "priority" in msg.lower(): action_type = "UPDATE_PRIORITY"
-        elif "→" in msg: action_type = "UPDATE_STATUS"
+        msg_val = result["message"]
+        if "Logged" in msg_val: action_type = "LOG_OBJECT"
+        elif "Anomalous" in msg_val: action_type = "FLAG_ANOMALY"
+        elif "priority" in msg_val.lower(): action_type = "UPDATE_PRIORITY"
+        elif "→" in msg_val: action_type = "UPDATE_STATUS"
         else: action_type = "CLARIFICATION_NEEDED"
 
     followups = get_followups(action_type)
     response_text = "\n".join(lines)
     
-    new_history = history + [
-        {"role": "user", "content": message},
-        {"role": "assistant", "content": response_text}
-    ]
+    new_message = {"role": "assistant", "content": [{"type": "text", "text": response_text}]}
+    new_history = history + [new_message]
     new_df = gr.Dataframe(
         headers=["💡 Contextual Follow-ups"],
         value=[[s] for s in followups]
     )
     
-    # Return: cleared textbox, updated history, updated dataframe, reveal kanban
-    return "", new_history, new_df, gr.update(value=render_kanban(), visible=True)
+    return new_history, new_df, gr.update(value=render_kanban(), visible=True)
 
-def run_evaluation(file_obj, instruction: str, document_type: str):
+def run_evaluation(file_obj, instruction: str, document_type: str, secret_word: str | None = None):
     if not file_obj:
         return "**❌ No file uploaded**", "{}", "**❌ No file uploaded**", "{}"
         
@@ -211,7 +227,7 @@ def run_evaluation(file_obj, instruction: str, document_type: str):
         return f"**❌ PDF Error:** {str(e)}", "{}", f"**❌ PDF Error:** {str(e)}", "{}"
         
     # 1. Run Unscaffolded Track
-    raw_res = run_unscaffolded_pdf_agent(text, instruction, document_type=document_type, provider=PROVIDER)
+    raw_res = run_unscaffolded_pdf_agent(text, instruction, document_type=document_type, provider=PROVIDER, secret_word=secret_word)
     if raw_res["success"]:
         raw_status = "**✅ Passed!**\n\nThe LLM magically generated perfect math on the first try."
     else:
@@ -220,7 +236,7 @@ def run_evaluation(file_obj, instruction: str, document_type: str):
     raw_json = raw_res["raw"]
     
     # 2. Run Scaffolded Track
-    scaf_res = run_pdf_agent(text, instruction, document_type=document_type, provider=PROVIDER)
+    scaf_res = run_pdf_agent(text, instruction, document_type=document_type, provider=PROVIDER, secret_word=secret_word)
     if scaf_res["status"] == "success":
         scaf_status = "**✅ Passed on Attempt 1**\n\nThe Python gate verified the math was perfect."
     elif scaf_res["status"] == "self_corrected":
@@ -234,7 +250,7 @@ def run_evaluation(file_obj, instruction: str, document_type: str):
     
     return raw_status, raw_json, scaf_status, scaf_json
 
-def extract_pdf_handler(file_obj, instruction: str, document_type: str) -> tuple[str, str]:
+def extract_pdf_handler(file_obj, instruction: str, document_type: str, secret_word: str | None = None) -> tuple[str, str]:
     if not file_obj:
         return "**❌ Failed** *(No file uploaded)*", "{}"
         
@@ -244,7 +260,7 @@ def extract_pdf_handler(file_obj, instruction: str, document_type: str) -> tuple
     except Exception as e:
         return f"**❌ Failed** *(Could not parse PDF: {str(e)})*", "{}"
         
-    result = run_pdf_agent(text, instruction, document_type=document_type, provider=PROVIDER)
+    result = run_pdf_agent(text, instruction, document_type=document_type, provider=PROVIDER, secret_word=secret_word)
     
     if result["status"] == "success":
         badge = "**✅ Success**"
@@ -269,7 +285,8 @@ def extract_pdf_handler(file_obj, instruction: str, document_type: str) -> tuple
 # ── PREMIUM UI DESIGN ─────────────────────────────────────────────────────────
 
 custom_theme = gr.themes.Monochrome(
-    font=(gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"),
+    font=(gr.themes.GoogleFont("Space Grotesk"), "ui-sans-serif", "system-ui", "sans-serif"),
+    font_mono=(gr.themes.GoogleFont("Space Mono"), "ui-monospace", "monospace"),
     primary_hue="indigo",
     secondary_hue="purple",
     neutral_hue="slate",
@@ -302,6 +319,14 @@ custom_theme = gr.themes.Monochrome(
 )
 
 custom_css = """
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+
+body, input, textarea, select, button, span, p, h1, h2, h3, h4, h5, h6, label {
+    font-family: 'Space Grotesk', 'Inter', 'ui-sans-serif', 'system-ui', sans-serif;
+}
+code, pre, .mono, .kanban-container, .suggestion-grid, table.dataframe, .chatbot .message {
+    font-family: 'Space Mono', 'Courier New', Courier, monospace !important;
+}
 body {
     background: radial-gradient(circle at top center, #1e1b4b 0%, #020617 100%) !important;
 }
@@ -325,9 +350,14 @@ body {
     transform: translateY(-2px);
     box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5) !important;
 }
-.kanban-container { font-family: system-ui, -apple-system, sans-serif; }
+.kanban-container { font-family: 'Space Mono', 'Courier New', Courier, monospace !important; }
 /* Expand the dataframe to fill full width */
 .suggestion-grid, .suggestion-grid .table-wrap, .suggestion-grid > div {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+/* Force chatbot and input-row to take full width */
+#chat-box, #input-row {
     width: 100% !important;
     max-width: 100% !important;
 }
@@ -378,28 +408,56 @@ function applyGlowEffect() {
 with gr.Blocks() as demo:
 
     gr.Markdown("""
-# 🔭 AI Observation Catalog with Deterministic Scaffolding
+# 🛡️ LLM Scaffolding Architecture (ReAct + RAG & Self-Correction)
+### Example Application: 🔭 AI Observation Catalog
 """, elem_classes=["header-title"])
 
     gr.Markdown("""
-
-Type natural language commands to manage an astronomical observation catalog. 
-Every AI output passes through a **Pydantic validation gate** and a **self-correction retry loop** before touching the database.
-The LLM never has direct database access.
+This dashboard showcases a production-grade **LLM Scaffolding Architecture** for sandboxing database-interacting AI agents. 
+Instead of direct database access, the agent produces structured tool intents (**ReAct + RAG**) which are intercepted, checked by a deterministic **Pydantic Validation Gate**, and automatically **self-corrected** via a retry loop before safe execution.
 
 [[GitHub Repo]](https://github.com/yourname/ai-task-scaffold) · [[Read the writeup]](https://github.com/yourname/ai-task-scaffold#readme)
 """)
 
     with gr.Tab("💬 Chat"):
+        with gr.Accordion("ℹ️ How to Use & Examine Scaffolding (ReAct + RAG)", open=True):
+            gr.Markdown("""
+### 🔍 How to examine the scaffolding in action:
+
+1. **Trigger the self-correction loop:**
+   * **Try this prompt:** `Update object NGC-9999 to Confirmed`
+   * *What happens:* `NGC-9999` doesn't exist in the database. The LLM will construct a valid JSON status update action, but the **validation gate (Stage 3)** will intercept the fake ID and throw a validation error. The orchestration layer (`agent.py`) catches this error, feeds it back to the LLM, and asks it to self-correct.
+
+2. **Test ambiguity handling (CLARIFICATION_NEEDED):**
+   * **Try this prompt:** `Schedule the weird one near Orion`
+   * *What happens:* The LLM realizes it can't map "the weird one" to a specific catalog UUID. Instead of guessing and updating a random object, it safely calls the `CLARIFICATION_NEEDED` tool to ask you for more details.
+
+3. **Check the Live Audit Log & Metrics:**
+   * Go to the **📊 Reliability Metrics** tab. Every single action (success, self-corrected, or failed) is permanently logged in the `ai_action_log` table. You can see how many times the AI failed validation and had to self-correct!
+
+4. **Test Forced Self-Correction (Advanced Setting):**
+   * Expand the **⚙️ Advanced: Force 1st-Pass Failure** accordion below and verify/change the secret word (e.g., `BANANA`).
+   * Ask the assistant any command, e.g., `Schedule Betelgeuse`.
+   * *What happens:* The validation gate will fail on the first pass because the LLM didn't use `BANANA` in its reasoning. Watch the assistant catch the error and automatically retry, adding `BANANA` to its reasoning to satisfy the gate!
+""")
+
+        with gr.Accordion("⚙️ Advanced: Force 1st-Pass Failure (Test Self-Correction)", open=False):
+            gr.Markdown("Inject a secret business rule into the backend Pydantic schema that the AI doesn't know about. This guarantees it will fail on Pass 1, forcing a self-correction.")
+            secret_input = gr.Textbox(
+                label="Secret Required Word",
+                value="BANANA",
+                placeholder="If set, the AI MUST use this exact word in its reasoning string...",
+            )
+
         gr.Markdown(
-            "*Try the examples — mix of clear commands, ambiguous requests, and "
+            "*Try the examples below — mix of clear commands, ambiguous requests, and "
             "nearly-irrelevant prompts. Watch the validation gate catch hallucinated IDs and the self-correction loop in action.*"
         )
 
         # ── Custom Chat UI ───
-        chatbot = gr.Chatbot(height=280, label="Astronomer's Assistant")
+        chatbot = gr.Chatbot(height=280, label="Astronomer's Assistant", elem_id="chat-box")
         
-        with gr.Row():
+        with gr.Row(elem_id="input-row"):
             msg = gr.Textbox(
                 scale=4,
                 show_label=False,
@@ -458,40 +516,81 @@ The LLM never has direct database access.
             elem_classes=["suggestion-grid"],
         )
 
-        with gr.Accordion("⚙️ Advanced: Force 1st-Pass Failure", open=False):
-            gr.Markdown("Inject a secret business rule into the backend Pydantic schema that the AI doesn't know about. This guarantees it will fail on Pass 1, forcing a self-correction.")
-            secret_input = gr.Textbox(
-                label="Secret Required Word",
-                value="BANANA",
-                placeholder="If set, the AI MUST use this exact word in its reasoning string...",
-            )
+
+
+
 
         # ── Kanban Board (Initially hidden, revealed on first chat) ───
-        kanban_visible = gr.HTML(visible=False)
+        kanban_visible = gr.HTML(visible=False, elem_classes=["kanban-container"])
 
         # Wire up chat submit
-        inputs_list = [msg, chatbot, secret_input]
-        outputs_list = [msg, chatbot, suggestions, kanban_visible]
+        msg.submit(
+            fn=handle_user_submit,
+            inputs=[msg, chatbot],
+            outputs=[msg, chatbot]
+        ).then(
+            fn=chat_response_handler,
+            inputs=[chatbot, secret_input],
+            outputs=[chatbot, suggestions, kanban_visible]
+        )
 
-        msg.submit(chat_handler, inputs_list, outputs_list)
-        submit_btn.click(chat_handler, inputs_list, outputs_list)
+        submit_btn.click(
+            fn=handle_user_submit,
+            inputs=[msg, chatbot],
+            outputs=[msg, chatbot]
+        ).then(
+            fn=chat_response_handler,
+            inputs=[chatbot, secret_input],
+            outputs=[chatbot, suggestions, kanban_visible]
+        )
         
-        def handle_suggestion_click(evt: gr.SelectData, history: list, secret: str):
+        def handle_suggestion_click(evt: gr.SelectData, history: list) -> tuple[str, list]:
             if not evt.value:  # Ignore clicks on empty padding cells
-                return gr.update(), history, gr.update(), gr.update()
-            return chat_handler(str(evt.value), history, secret)
+                return "", history
+            new_message = {"role": "user", "content": [{"type": "text", "text": str(evt.value)}]}
+            return "", history + [new_message]
 
         # When a cell in the dataframe is clicked, automatically send it
         suggestions.select(
             fn=handle_suggestion_click,
+            inputs=[chatbot],
+            outputs=[msg, chatbot]
+        ).then(
+            fn=chat_response_handler,
             inputs=[chatbot, secret_input],
-            outputs=outputs_list,
+            outputs=[chatbot, suggestions, kanban_visible]
         )
 
     with gr.Tab("PDF Data Extractor"):
         gr.Markdown("### 📄 Structured Data Extraction")
         gr.Markdown("Upload a messy PDF invoice. The AI will extract it into a rigidly structured JSON object. The backend enforces strict math validation (Quantity * Price = Total) and will force the AI to self-correct if it hallucinates the numbers!")
         
+        with gr.Accordion("ℹ️ How to Use & Examine PDF Data Extraction", open=True):
+            gr.Markdown("""
+### 🔍 How to examine the PDF Scaffolding in action:
+
+1. **Get a test file:** Find one of the provided test invoices in your workspace directory (e.g., `test_invoice.pdf` or `test_complex_invoice.pdf`).
+2. **Upload & Extract:** Upload the PDF file, select the **Invoice** target schema, and click **Extract Structured Data**.
+3. **Pydantic Validation:** The AI processes the text and converts it to JSON matching the target Pydantic schema. The backend automatically checks that:
+   * The JSON structure matches the schema layout.
+   * **Math check (Invoice):** The math for all lines is validated (`quantity * price == total`), and the sum of all item line totals equals the invoice subtotal.
+   * **Math check (Medical Record):** The BMI is mathematically validated against height and weight.
+4. **Self-Correction:** If the AI hallucinates a math total or output format, the validation gate catches it, intercepts the write, and instructs the LLM to self-correct and recalculate the values.
+5. **Test Forced Self-Correction (Advanced Setting):**
+   * Expand the **⚙️ Advanced: Force 1st-Pass Failure** accordion below.
+   * Enter a secret required word (e.g., `BANANA`).
+   * Click **Extract Structured Data**.
+   * *What happens:* Because the LLM does not know about this requirement initially, it will generate JSON without this word. The **Pydantic Validation Gate** catches it, triggers a validation failure, and passes the error back. The AI automatically self-corrects on the next attempt by including the secret word in its reasoning field, resulting in a successful extraction!
+""")
+
+        with gr.Accordion("⚙️ Advanced: Force 1st-Pass Failure (Test Self-Correction)", open=False):
+            gr.Markdown("Inject a secret business rule into the backend Pydantic schema that the AI doesn't know about. This guarantees it will fail on Pass 1, forcing a self-correction.")
+            pdf_secret_input = gr.Textbox(
+                label="Secret Required Word",
+                value="BANANA",
+                placeholder="If set, the AI MUST use this exact word in its reasoning string...",
+            )
+
         with gr.Row():
             with gr.Column(scale=1):
                 pdf_upload = gr.File(label="Upload PDF", file_types=[".pdf"])
@@ -505,7 +604,7 @@ The LLM never has direct database access.
                 
         extract_btn.click(
             extract_pdf_handler,
-            inputs=[pdf_upload, pdf_instruction, doc_type_dropdown],
+            inputs=[pdf_upload, pdf_instruction, doc_type_dropdown, pdf_secret_input],
             outputs=[pdf_status, pdf_output],
         )
 
@@ -513,6 +612,29 @@ The LLM never has direct database access.
         gr.Markdown("## The Scaffolding Test")
         gr.Markdown("Upload a complex document with broken math (e.g., `test_complex_invoice_no_note.pdf`). This tab runs the exact same LLM prompt down two parallel tracks: one with our Scaffolding Architecture, and one without. Watch what happens to your data!")
         
+        with gr.Accordion("ℹ️ How to Use & Compare Scaffolding A/B tracks", open=True):
+            gr.Markdown("""
+### 🔍 How to run the A/B Scaffolding Evaluation:
+
+1. **Use a broken-math file:** Select `test_complex_invoice_no_note.pdf` from your project folder. This invoice contains intentionally corrupted line totals (e.g. quantity or price multiplication is wrong in the document itself).
+2. **Execute A/B Test:** Upload this file, select the **Invoice** target schema, and click **Run A/B Evaluation**.
+3. **Compare the Tracks:**
+   * **❌ Unscaffolded AI (Left):** The raw LLM copies the numbers. It doesn't run any backend validations. If it hallucinates the math or copies bad math, it simply saves the bad data.
+   * **🛡️ Scaffolded AI (Right):** The scaffolded pipeline runs the validation gate. It catches the broken math (where `quantity * price != total` in the document), rejects it, and starts a **self-correction loop** using feedback prompts, forcing the LLM to recalculate the correct values before writing to the database!
+4. **Test Forced Self-Correction (Advanced Setting):**
+   * Expand the **⚙️ Advanced: Force 1st-Pass Failure** accordion below and enter a secret word (e.g., `BANANA`).
+   * Click **Run A/B Evaluation**.
+   * *What happens:* The **❌ Unscaffolded AI (Left)** will fail completely because it does not retry. The **🛡️ Scaffolded AI (Right)** will fail on its first attempt, receive the validation feedback, and immediately self-correct to satisfy the schema before displaying the final validated JSON!
+""")
+
+        with gr.Accordion("⚙️ Advanced: Force 1st-Pass Failure (Test Self-Correction)", open=False):
+            gr.Markdown("Inject a secret business rule into the backend Pydantic schema that the AI doesn't know about. This guarantees it will fail on Pass 1, forcing a self-correction.")
+            eval_secret_input = gr.Textbox(
+                label="Secret Required Word",
+                value="BANANA",
+                placeholder="If set, the AI MUST use this exact word in its reasoning string...",
+            )
+
         with gr.Row():
             eval_upload = gr.File(label="Upload PDF", file_types=[".pdf"])
             eval_schema = gr.Dropdown(["Invoice", "Patient Medical Record"], value="Invoice", label="Target Schema")
@@ -536,13 +658,13 @@ The LLM never has direct database access.
                 
         eval_btn.click(
             run_evaluation,
-            inputs=[eval_upload, eval_instruction, eval_schema],
+            inputs=[eval_upload, eval_instruction, eval_schema, eval_secret_input],
             outputs=[unscaffolded_status, unscaffolded_output, scaffolded_status, scaffolded_output]
         )
 
     with gr.Tab("📋 Full Catalog"):
         gr.Markdown("*Full catalog view — Kanban style.*")
-        kanban_full = gr.HTML()
+        kanban_full = gr.HTML(elem_classes=["kanban-container"])
         gr.Button("🔄 Refresh").click(fn=render_kanban, outputs=kanban_full)
         demo.load(fn=render_kanban, outputs=kanban_full)
 

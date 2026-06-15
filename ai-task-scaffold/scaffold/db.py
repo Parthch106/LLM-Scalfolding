@@ -5,7 +5,8 @@ Supabase client setup + all database operations.
 This is the ONLY file that talks to the database — the LLM never touches this directly.
 """
 import os
-from supabase import create_client, Client
+import httpx
+from supabase import create_client, Client, ClientOptions
 from openai import OpenAI
 
 _client: Client | None = None
@@ -17,7 +18,10 @@ def get_supabase() -> Client:
     if _client is None:
         url = os.environ["SUPABASE_URL"]
         key = os.environ["SUPABASE_KEY"]
-        _client = create_client(url, key)
+        options = ClientOptions(
+            httpx_client=httpx.Client(http2=False)
+        )
+        _client = create_client(url, key, options=options)
     return _client
 
 
