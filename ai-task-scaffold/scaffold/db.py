@@ -16,8 +16,10 @@ def get_supabase() -> Client:
     """Lazy singleton — initialised once per process."""
     global _client
     if _client is None:
-        url = os.environ["SUPABASE_URL"]
-        key = os.environ["SUPABASE_KEY"]
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_KEY")
+        if not url or not key:
+            raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY. Please configure them in HF Spaces Secrets.")
         options = ClientOptions(
             httpx_client=httpx.Client(http2=False)
         )
@@ -30,23 +32,31 @@ def get_catalog_for_context(user_id: str) -> list[dict]:
     Fetch the user's catalog to pass as context to the LLM.
     Only includes fields the LLM needs — never leaks other users' data.
     """
-    sb = get_supabase()
-    res = (
-        sb.table("celestial_objects")
-        .select("id, catalog_id, name, object_type, observation_status, priority, tags")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .limit(100)  # cap context size sent to LLM
-        .execute()
-    )
-    return res.data or []
+    try:
+        sb = get_supabase()
+        res = (
+            sb.table("celestial_objects")
+            .select("id, catalog_id, name, object_type, observation_status, priority, tags")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(100)  # cap context size sent to LLM
+            .execute()
+        )
+        return res.data or []
+    except Exception as e:
+        print(f"Database error in get_catalog_for_context: {e}")
+        return []
     
 def search_catalog(query: str, user_id: str) -> list[dict]:
     """
     RAG Semantic Vector Search.
     Converts the query into a math vector and performs Cosine Similarity search.
     """
-    sb = get_supabase()
+    try:
+        sb = get_supabase()
+    except Exception as e:
+        print(f"Database error in search_catalog: {e}")
+        return []
     
     try:
         # Default to github proxy, fallback to openai
@@ -87,28 +97,36 @@ def log_action(
     provider: str = "github",
 ) -> None:
     """Write a full audit log entry for every AI-driven action."""
-    sb = get_supabase()
-    sb.table("ai_action_log").insert({
-        "user_id": user_id,
-        "user_prompt": user_prompt,
-        "raw_llm_output": attempts[0].get("raw") if attempts else None,
-        "validation_attempts": attempts,
-        "final_status": final_status,
-        "executed_action": executed_action,
-        "provider": provider,
-    }).execute()
+    try:
+        sb = get_supabase()
+        sb.table("ai_action_log").insert({
+            "user_id": user_id,
+            "user_prompt": user_prompt,
+            "raw_llm_output": attempts[0].get("raw") if attempts else None,
+            "validation_attempts": attempts,
+            "final_status": final_status,
+            "executed_action": executed_action,
+            "provider": provider,
+        }).execute()
+    except Exception as e:
+        print(f"Database error in log_action: {e}")
 
 
 def get_metrics(user_id: str) -> dict:
     """Compute live success/failure metrics from the audit log."""
-    sb = get_supabase()
-    res = (
-        sb.table("ai_action_log")
-        .select("final_status, provider")
-        .eq("user_id", user_id)
-        .execute()
-    )
-    rows = res.data or []
+    try:
+        sb = get_supabase()
+        res = (
+            sb.table("ai_action_log")
+            .select("final_status, provider")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        rows = res.data or []
+    except Exception as e:
+        print(f"Database error in get_metrics: {e}")
+        return {"total_runs": 0, "message": f"Error connecting to database: {e}"}
+
     total = len(rows)
     if total == 0:
         return {"total_runs": 0, "message": "No actions logged yet. Try a command!"}

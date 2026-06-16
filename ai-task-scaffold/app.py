@@ -75,9 +75,13 @@ STATUS_ORDER   = {"Anomalous": 0, "Unobserved": 1, "Scheduled": 2, "Observed": 3
 STATUS_COLS    = ["Unobserved", "Scheduled", "Observed", "Confirmed", "Anomalous"]
 
 def fetch_objects() -> list[dict]:
-    sb = get_supabase()
-    res = sb.table("celestial_objects").select("*").eq("user_id", DEMO_USER_ID).execute()
-    return res.data or []
+    try:
+        sb = get_supabase()
+        res = sb.table("celestial_objects").select("*").eq("user_id", DEMO_USER_ID).execute()
+        return res.data or []
+    except Exception as e:
+        print(f"Error fetching objects: {e}")
+        return []
 
 def render_kanban() -> str:
     """Render the celestial objects as an HTML Kanban board."""
@@ -744,5 +748,5 @@ Want to see the scaffolding working? Try these experiments in the Chat tab:
    - Go to the **📊 Reliability Metrics** tab. Every single action (success, self-corrected, or failed) is permanently logged in the `ai_action_log` table. You can open your Supabase dashboard and see exactly how many times the AI failed validation and had to self-correct!
 """)
 
-demo.launch(theme=custom_theme, css=custom_css, js=HOVER_GLOW_JS)
+demo.launch(theme=custom_theme, css=custom_css, js=HOVER_GLOW_JS, ssr_mode=False)
 
